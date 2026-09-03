@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.DS_Store
+*.mcpb
+payment_qr.*
+screenshots/
+dist/
+build/
+*.egg-info/

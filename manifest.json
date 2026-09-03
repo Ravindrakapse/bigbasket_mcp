@@ -1,0 +1,142 @@
+{
+  "manifest_version": "0.1",
+  "name": "bigbasket-mcp",
+  "display_name": "BigBasket",
+  "version": "1.0.0",
+  "description": "Shop on BigBasket from Claude: search the catalogue, manage the cart, pick an address and drive checkout.",
+  "long_description": "Runs a real browser session against bigbasket.com and calls BigBasket's own web APIs from inside it, so cookies, CSRF and bot-protection tokens stay valid. Tools cover login by OTP, delivery location, catalogue search, cart edits and the checkout flow.",
+  "author": {
+    "name": "Ravindra Kapse"
+  },
+  "license": "MIT",
+  "server": {
+    "type": "python",
+    "entry_point": "main.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "main.py"
+      ],
+      "env": {
+        "HEADLESS": "true"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "check_login",
+      "description": "Check whether the saved session is signed in"
+    },
+    {
+      "name": "login",
+      "description": "Start login and request an OTP"
+    },
+    {
+      "name": "enter_otp",
+      "description": "Submit the OTP"
+    },
+    {
+      "name": "get_user_details",
+      "description": "Show session and delivery point"
+    },
+    {
+      "name": "get_location_serviceability",
+      "description": "Check delivery at a coordinate"
+    },
+    {
+      "name": "set_location",
+      "description": "Set delivery location by area, landmark or pincode"
+    },
+    {
+      "name": "get_delivery_info",
+      "description": "Show current address and ETA"
+    },
+    {
+      "name": "list_saved_addresses",
+      "description": "List saved addresses"
+    },
+    {
+      "name": "select_saved_address",
+      "description": "Switch to a saved address"
+    },
+    {
+      "name": "search_products",
+      "description": "Search the catalogue for one product"
+    },
+    {
+      "name": "search_multiple_products",
+      "description": "Search several products at once"
+    },
+    {
+      "name": "get_product_details",
+      "description": "Full detail for one product"
+    },
+    {
+      "name": "suggest",
+      "description": "Search suggestions for a vague term"
+    },
+    {
+      "name": "update_cart",
+      "description": "Add, update or remove cart items in one call"
+    },
+    {
+      "name": "view_cart",
+      "description": "Show cart contents and subtotal"
+    },
+    {
+      "name": "clear_cart",
+      "description": "Empty the cart"
+    },
+    {
+      "name": "get_past_order_items",
+      "description": "Items bought before, from Smart Basket"
+    },
+    {
+      "name": "list_order_history",
+      "description": "List recent orders"
+    },
+    {
+      "name": "get_order_detail",
+      "description": "Detail of one order"
+    },
+    {
+      "name": "open_checkout",
+      "description": "Open the checkout page"
+    },
+    {
+      "name": "list_slots",
+      "description": "List delivery slots"
+    },
+    {
+      "name": "get_payment_methods",
+      "description": "List available payment methods"
+    },
+    {
+      "name": "select_payment_method",
+      "description": "Choose cod, upi, wallet, card or netbanking"
+    },
+    {
+      "name": "create_order",
+      "description": "Preview the order, or place it on confirmation"
+    },
+    {
+      "name": "check_payment_status",
+      "description": "Report checkout or payment state"
+    },
+    {
+      "name": "screenshot",
+      "description": "Screenshot the current page"
+    }
+  ],
+  "keywords": [
+    "bigbasket",
+    "grocery",
+    "shopping",
+    "india",
+    "playwright",
+    "mcp"
+  ]
+}
