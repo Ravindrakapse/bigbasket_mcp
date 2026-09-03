@@ -67,6 +67,9 @@ class BigBasketContext:
             elif self.order is None:
                 self.order = BigBasketOrder(self.auth.page)
 
+            # Keep the cookie file fresh so the login survives restarts.
+            await self.auth.maybe_save_session()
+
 
 ctx = BigBasketContext()
 

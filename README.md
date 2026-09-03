@@ -100,6 +100,8 @@ uv run python test/cli.py "toor dal"
 | Cart write | `POST /mapi/v4.2.0/c-set-i/`, with `c-incr-i` and `c-decr-i` as relatives |
 | Address and ETA | `GET /ui-svc/v2/header/?send_door_info=true&send_address_set_by_user=true` |
 | Address book | `GET /ui-svc/v1/address/list`, which returns 401 for guests |
+| Past purchases | `GET /listing-svc/v2/products?type=mem.sb&slug=all` (Smart Basket) |
+| Orders | `POST /self-service-svc/v2/order-listing/` |
 | Checkout | `/order/v2/checkout/`, driven through the page |
 
 The cart endpoint returns only SKU ids and quantities, so `view_cart` labels lines using
@@ -107,6 +109,9 @@ products seen during the session and flags the subtotal as partial when a price 
 
 Login, location picking and checkout are driven through the page rather than the API,
 because those flows involve OTP entry, geolocation prompts and payment widgets.
+
+Writes to the newer services need the `x-csurftoken` header, whose value the site keeps
+in a cookie of the same name; the server reads it out of the page on every call.
 
 Bursts are throttled: BigBasket answers a fast run of calls with 429, so the server
 spaces calls and backs off before retrying. A long shopping list therefore takes a few

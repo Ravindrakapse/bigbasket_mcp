@@ -39,6 +39,7 @@ class BaseService:
             "content-type": "application/json",
             "x-entry-context": os.environ.get("BB_ENTRY_CONTEXT", "bbnow"),
             "x-entry-context-id": os.environ.get("BB_ENTRY_CONTEXT_ID", "10"),
+            "x-integrated-fc-door-visible": "false",
         }
 
     async def api(
@@ -86,6 +87,10 @@ class BaseService:
     ) -> tuple[int, Any]:
         result = await self.page.evaluate(
             """async ({path, method, body, headers}) => {
+                // Newer BigBasket services reject writes without the CSRF header,
+                // whose value the site keeps in the csurftoken cookie.
+                const match = document.cookie.match(/(?:^|; )csurftoken=([^;]+)/);
+                if (match) headers['x-csurftoken'] = decodeURIComponent(match[1]);
                 const options = {method, headers, credentials: 'include'};
                 if (body !== null && body !== undefined) options.body = JSON.stringify(body);
                 const res = await fetch(path, options);

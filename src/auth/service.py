@@ -1,4 +1,5 @@
 import os
+import time
 
 from playwright.async_api import async_playwright
 
@@ -26,6 +27,7 @@ class BigBasketAuth:
         self.browser = None
         self.context = None
         self.page = None
+        self._last_saved = 0.0
 
     async def _launch_browser(self):
         """Launch Chromium, tolerating partial Playwright browser installs.
@@ -153,7 +155,7 @@ class BigBasketAuth:
             await self.page.goto(
                 BASE_URL + "/", timeout=60000, wait_until="domcontentloaded"
             )
-            await self.page.wait_for_timeout(3000)
+            await self.page.wait_for_timeout(4000)
         except Exception as e:
             print(f"Could not reload the home page: {e}")
 
@@ -161,8 +163,8 @@ class BigBasketAuth:
         for selector in [
             "button:has-text('Login/ Sign Up')",
             "button:has-text('Login/Sign Up')",
+            "button:has-text('Login')",
             "div:has-text('Login/ Sign Up')",
-            "text=Login",
         ]:
             try:
                 el = self.page.locator(selector).first
@@ -176,15 +178,20 @@ class BigBasketAuth:
         if not clicked:
             print("Could not find the Login button. The modal may already be open.")
 
+        await self.page.wait_for_timeout(2500)
+
         try:
+            # The modal's field is a plain text input named multiform that takes a
+            # phone number or an email address.
             phone_input = await self.page.wait_for_selector(
-                "input[type='tel'], input[name*='mobile'], input[id*='mobile'], input[type='number']",
+                "input#multiform, input[name='multiform'], "
+                "input[placeholder*='Phone number'], input[type='tel']",
                 state="visible",
                 timeout=20000,
             )
             await phone_input.click()
             await phone_input.fill(phone_number)
-            await self.page.wait_for_timeout(500)
+            await self.page.wait_for_timeout(800)
 
             for selector in [
                 "button:has-text('Continue')",
@@ -201,38 +208,51 @@ class BigBasketAuth:
                 await self.page.keyboard.press("Enter")
                 print("Submitted the phone number with Enter.")
 
-            await self.page.wait_for_timeout(3000)
-            print("OTP requested. Call enter_otp with the code sent to your phone.")
+            await self.page.wait_for_timeout(5000)
+            body = await self.page.evaluate("() => document.body.innerText")
+            if "OTP" in body or "otp" in body:
+                print("BigBasket is asking for an OTP. Call enter_otp with the code.")
+            else:
+                print(
+                    "No OTP prompt was detected. The number may be wrong, or a "
+                    "captcha may be blocking the flow; run with HEADLESS=false to look."
+                )
         except Exception as e:
             print(f"Could not submit the phone number: {e}")
 
     async def enter_otp(self, otp: str):
-        """Fill the OTP boxes and submit."""
+        """Fill the OTP boxes inside the login modal and submit."""
         try:
-            await self.page.wait_for_selector("input", timeout=20000)
-            inputs = self.page.locator(
-                "input[type='tel'], input[type='number'], input[type='text'], input[inputmode='numeric']"
+            scope = self.page.locator("[role='dialog'], [class*='Modal']").first
+            if not await scope.count():
+                scope = self.page
+
+            # Ignore the header search boxes, which are also visible text inputs.
+            boxes = scope.locator(
+                "input:not([placeholder*='Search']):not([type='hidden'])"
             )
-            count = await inputs.count()
+            await boxes.first.wait_for(state="visible", timeout=20000)
 
-            if count >= len(otp) and count > 1:
-                # One box per digit: fill the last `len(otp)` visible boxes.
-                boxes = []
-                for i in range(count):
-                    box = inputs.nth(i)
-                    try:
-                        if await box.is_visible():
-                            boxes.append(box)
-                    except Exception:
-                        continue
-                boxes = boxes[-len(otp):] if len(boxes) >= len(otp) else boxes
-                for box, digit in zip(boxes, otp):
+            visible = []
+            for i in range(await boxes.count()):
+                box = boxes.nth(i)
+                try:
+                    if await box.is_visible():
+                        visible.append(box)
+                except Exception:
+                    continue
+
+            if len(visible) >= len(otp) > 1:
+                for box, digit in zip(visible[-len(otp):], otp):
                     await box.fill(digit)
-                    await self.page.wait_for_timeout(120)
+                    await self.page.wait_for_timeout(150)
+            elif visible:
+                await visible[0].fill(otp)
             else:
-                await inputs.first.fill(otp)
+                print("No OTP field was visible in the login modal.")
+                return
 
-            await self.page.wait_for_timeout(500)
+            await self.page.wait_for_timeout(800)
             for selector in [
                 "button:has-text('Continue')",
                 "button:has-text('Verify')",
@@ -245,15 +265,32 @@ class BigBasketAuth:
             else:
                 await self.page.keyboard.press("Enter")
 
-            await self.page.wait_for_timeout(5000)
+            await self.page.wait_for_timeout(6000)
             print("OTP submitted.")
         except Exception as e:
             print(f"Could not enter the OTP: {e}")
 
-    async def save_session(self):
+    async def save_session(self, quiet: bool = False):
         os.makedirs(os.path.dirname(self.session_path), exist_ok=True)
         await self.context.storage_state(path=self.session_path)
-        print(f"Session saved to {self.session_path}")
+        self._last_saved = time.monotonic()
+        if not quiet:
+            print(f"Session saved to {self.session_path}")
+
+    async def maybe_save_session(self, min_interval: float = 60.0):
+        """Persist cookies periodically so a login survives restarts.
+
+        BigBasket rotates its session cookies as you browse, so the file on disk
+        goes stale if it is only written at login time.
+        """
+        if not self.context:
+            return
+        if time.monotonic() - self._last_saved < min_interval:
+            return
+        try:
+            await self.save_session(quiet=True)
+        except Exception as e:
+            print(f"Could not refresh the saved session: {e}")
 
     async def close(self):
         if self.browser:
