@@ -102,6 +102,7 @@ uv run python test/cli.py "toor dal"
 | Address book | `GET /ui-svc/v1/address/list`, which returns 401 for guests |
 | Past purchases | `GET /listing-svc/v2/products?type=mem.sb&slug=all` (Smart Basket) |
 | Orders | `POST /self-service-svc/v2/order-listing/` |
+| Switching address | `PUT /member-svc/v2/member/current-delivery-address/` |
 | Checkout | `/order/v2/checkout/`, driven through the page |
 
 The cart endpoint returns only SKU ids and quantities, so `view_cart` labels lines using
@@ -109,6 +110,11 @@ products seen during the session and flags the subtotal as partial when a price 
 
 Login, location picking and checkout are driven through the page rather than the API,
 because those flows involve OTP entry, geolocation prompts and payment widgets.
+
+Service areas follow the browser's coordinates, not the chosen address id, so
+switching to a saved address also moves the geolocation pin to that address's
+own latitude and longitude. Skipping that leaves search answering 303 "SAs got
+filtered".
 
 Writes to the newer services need the `x-csurftoken` header, whose value the site keeps
 in a cookie of the same name; the server reads it out of the page on every call.

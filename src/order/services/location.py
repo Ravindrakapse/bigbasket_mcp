@@ -1,4 +1,8 @@
+import re
+
 from .base import BaseService
+
+CURRENT_ADDRESS = "/member-svc/v2/member/current-delivery-address/"
 
 HEADER = "/ui-svc/v2/header/?send_door_info=true&send_address_set_by_user=true"
 ADDRESS_LIST = "/ui-svc/v1/address/list"
@@ -35,7 +39,12 @@ class LocationService(BaseService):
 
         raw = []
         if isinstance(payload, dict):
-            raw = payload.get("addresses") or payload.get("data") or payload.get("address_list") or []
+            raw = (
+                payload.get("addresses")
+                or payload.get("data")
+                or payload.get("address_list")
+                or []
+            )
         elif isinstance(payload, list):
             raw = payload
 
@@ -44,36 +53,68 @@ class LocationService(BaseService):
             if not isinstance(address, dict):
                 continue
             parts = [
-                address.get("house_number"),
-                address.get("street"),
+                address.get("address1"),
+                address.get("address2"),
                 address.get("area"),
-                address.get("city"),
+                address.get("city_name"),
                 address.get("pin"),
             ]
             addresses.append(
                 {
                     "index": index,
                     "id": address.get("id") or address.get("address_id"),
-                    "label": address.get("label") or address.get("address_label") or "Address",
-                    "details": ", ".join(str(p) for p in parts if p),
-                    "is_selected": bool(address.get("is_selected") or address.get("selected")),
+                    "label": address.get("nick") or address.get("address_label") or "Address",
+                    "details": ", ".join(str(p).strip() for p in parts if p),
+                    "is_selected": bool(address.get("is_current_delivery")),
+                    "lat": address.get("lat"),
+                    "lng": address.get("lng"),
                 }
             )
         return addresses
 
     async def select_address(self, address_id: str) -> str:
-        """Switch the shopping session to a saved address."""
-        for path, body in [
-            ("/ui-svc/v1/address/select", {"address_id": str(address_id)}),
-            ("/ui-svc/v1/address/set", {"id": str(address_id)}),
-        ]:
-            status, payload = await self.api(path, method="POST", body=body)
-            if status == 200:
-                await self.goto("/", wait_ms=4000)
-                return f"Delivery address set to {address_id}."
+        """Switch the shopping session to a saved address.
+
+        This is the call the site makes when you pick an address in the header
+        picker. It also rebuilds the service-area cookies that search depends on.
+        """
+        try:
+            wanted = int(str(address_id).strip())
+        except ValueError:
+            return f"'{address_id}' is not a valid address id."
+
+        # The site uses PUT here; POST is answered with 405.
+        status, payload = await self.api(
+            CURRENT_ADDRESS,
+            method="PUT",
+            body={"address_id": wanted, "return_hub_cookies": False},
+        )
+        if status in (401, 403):
+            return "Not logged in. Run login and enter_otp first."
+        if status not in (200, 204):
+            return f"Could not switch to address {address_id}: HTTP {status}."
+
+        # BigBasket resolves service areas from the browser's coordinates, not
+        # from the address id alone, so move the pin to the address as well.
+        moved = ""
+        for address in await self.get_saved_addresses():
+            if str(address["id"]) == str(wanted) and address["lat"] and address["lng"]:
+                try:
+                    await self.page.context.set_geolocation(
+                        {
+                            "latitude": float(address["lat"]),
+                            "longitude": float(address["lng"]),
+                        }
+                    )
+                    moved = f" ({address['label']}: {address['details']})"
+                except Exception as e:
+                    print(f"Could not move the geolocation pin: {e}")
+                break
+
+        await self.goto("/", wait_ms=6000)
         return (
-            f"Could not switch to address {address_id} through the API. "
-            "Use set_location, or pick the address in the browser window."
+            f"Delivery address set to {address_id}{moved}. "
+            f"{await self.get_delivery_info()}"
         )
 
     async def set_location(self, query: str) -> str:
@@ -81,29 +122,28 @@ class LocationService(BaseService):
 
         Pass 'detect' to use the browser's geolocation instead.
         """
-        await self.goto("/", wait_ms=4000)
+        await self.goto("/", wait_ms=5000)
         await self.dismiss_overlays()
 
+        # The header chip reads "Delivery in N mins / <pincode>, <city>", or
+        # "Select Location" before a location is chosen. Clicking it opens the
+        # picker panel.
         opened = False
-        for selector in [
-            "button:has-text('Select Location')",
-            "div:has-text('Deliver to') >> nth=-1",
-            "[class*='AddressDropdown']",
-            "[class*='LocationBar']",
-            "header button:has-text('Bangalore')",
-        ]:
-            try:
-                el = self.page.locator(selector).first
-                if await el.count() and await el.is_visible():
-                    if await self.safe_click(el, "location selector"):
-                        opened = True
-                        break
-            except Exception:
-                continue
+        # The chip's wording changes with the ETA: "Delivery in 16 mins",
+        # "Get it in 4 hrs", or "Select Location" before one is chosen.
+        chip = self.page.locator("header button").filter(
+            has_text=re.compile(r"Delivery in|Get it in|Select ?[Ll]ocation|Deliver to", re.I)
+        )
+        try:
+            if await chip.count():
+                await chip.first.click(timeout=8000)
+                opened = True
+        except Exception:
+            opened = False
         if not opened:
             return "Could not open the location picker. The site layout may have changed."
 
-        await self.page.wait_for_timeout(2000)
+        await self.page.wait_for_timeout(3000)
 
         if query.strip().lower() == "detect":
             for selector in [
@@ -115,28 +155,35 @@ class LocationService(BaseService):
                 if await el.count() and await el.is_visible():
                     await self.safe_click(el, "detect location")
                     await self.page.wait_for_timeout(5000)
-                    info = await self.get_delivery_info()
-                    return f"Detected location applied. Current delivery info: {info}"
+                    return f"Detected location applied. {await self.get_delivery_info()}"
             return "The location picker has no 'Detect my location' option right now."
 
         try:
             box = await self.page.wait_for_selector(
-                "input[placeholder*='ocation'], input[placeholder*='pincode'], "
-                "input[placeholder*='area'], input[type='search']",
+                "input[placeholder*='area or street'], input[placeholder*='area'], "
+                "input[placeholder*='pincode'], input[placeholder*='ocation']",
                 state="visible",
                 timeout=15000,
             )
             await box.click()
-            await box.fill(query)
-            await self.page.wait_for_timeout(3000)
+            # The suggestion list is keystroke driven, so a bulk fill returns nothing.
+            await box.type(query, delay=110)
+            await self.page.wait_for_timeout(4000)
 
-            suggestion = self.page.locator("li, [role='option'], [class*='uggestion']").first
-            if await suggestion.count():
-                await self.safe_click(suggestion, "location suggestion")
-                await self.page.wait_for_timeout(5000)
-                info = await self.get_delivery_info()
-                return f"Location set from '{query}'. Current delivery info: {info}"
-            return f"No location suggestions appeared for '{query}'."
+            # Scope to the picker's own visible list: other hidden <li> elements
+            # elsewhere on the page also carry commas.
+            options = self.page.locator("li:visible").filter(has_text=",")
+            count = await options.count()
+            if not count:
+                return (
+                    f"No location suggestions came back for '{query}'. "
+                    "Try a broader area name or a pincode."
+                )
+
+            chosen = (await options.first.inner_text()).replace("\n", " ").strip()
+            await options.first.click()
+            await self.page.wait_for_timeout(6000)
+            return f"Location set to '{chosen}'. {await self.get_delivery_info()}"
         except Exception as e:
             return f"Could not set the location: {e}"
 
