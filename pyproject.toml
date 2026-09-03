@@ -5,7 +5,7 @@ description = "Automate grocery shopping on BigBasket from Claude. Search, cart,
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-dependencies = ["playwright==1.57.0", "mcp>=1.2.0", "python-dotenv"]
+dependencies = ["playwright>=1.49", "mcp>=1.2.0", "python-dotenv"]
 
 [project.scripts]
 bigbasket-mcp = "main:main"
