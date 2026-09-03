@@ -1,5 +1,7 @@
+import asyncio
 import json
 import os
+import time
 import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -9,6 +11,13 @@ if TYPE_CHECKING:
     from src.order.bigbasket_order import BigBasketOrder
 
 BASE_URL = "https://www.bigbasket.com"
+
+# BigBasket throttles bursts with 429, so calls are spaced and backed off.
+MIN_CALL_INTERVAL = float(os.environ.get("BB_MIN_CALL_INTERVAL", "0.8"))
+RATE_LIMIT_BACKOFF = (3.0, 8.0, 20.0)
+
+_last_call_at = 0.0
+_call_lock = asyncio.Lock()
 
 
 class BaseService:
@@ -40,7 +49,16 @@ class BaseService:
         A 403 means Akamai has not blessed this session yet, so the page is
         reloaded once to let the sensor script re-run.
         """
-        status, payload = await self._fetch(path, method, body)
+        status, payload = await self._paced_fetch(path, method, body)
+
+        attempt = 0
+        while status == 429 and retry and attempt < len(RATE_LIMIT_BACKOFF):
+            wait = RATE_LIMIT_BACKOFF[attempt]
+            print(f"Rate limited by BigBasket. Waiting {wait:.0f}s before retrying.")
+            await self.page.wait_for_timeout(int(wait * 1000))
+            status, payload = await self._paced_fetch(path, method, body)
+            attempt += 1
+
         if status == 403 and retry:
             print("Got 403 from BigBasket. Reloading the page and retrying once.")
             try:
@@ -48,8 +66,20 @@ class BaseService:
                 await self.page.wait_for_timeout(6000)
             except Exception as e:
                 print(f"Reload failed: {e}")
-            status, payload = await self._fetch(path, method, body)
+            status, payload = await self._paced_fetch(path, method, body)
         return status, payload
+
+    async def _paced_fetch(
+        self, path: str, method: str = "GET", body: Any = None
+    ) -> tuple[int, Any]:
+        """Keep a minimum gap between calls so bursts do not trip the throttle."""
+        global _last_call_at
+        async with _call_lock:
+            gap = time.monotonic() - _last_call_at
+            if gap < MIN_CALL_INTERVAL:
+                await self.page.wait_for_timeout(int((MIN_CALL_INTERVAL - gap) * 1000))
+            _last_call_at = time.monotonic()
+        return await self._fetch(path, method, body)
 
     async def _fetch(
         self, path: str, method: str = "GET", body: Any = None

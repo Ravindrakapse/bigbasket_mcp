@@ -53,6 +53,12 @@ class SearchService(BaseService):
         slug = urllib.parse.quote(query)
         status, payload = await self.api(SEARCH_PATH.format(slug=slug, page=page))
 
+        if status == 429:
+            print(
+                "BigBasket is rate limiting this session. Slow down, or raise "
+                "BB_MIN_CALL_INTERVAL, then search again."
+            )
+            return []
         if status != 200:
             message = payload
             if isinstance(payload, dict) and payload.get("errors"):

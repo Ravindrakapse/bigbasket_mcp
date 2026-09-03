@@ -59,6 +59,7 @@ Environment variables, all optional, are documented in `.env.sample`:
 | `HEADLESS` | `true` | Set `false` to watch the browser, which helps during login and payment |
 | `SERVE_HTTPS` | unset | Set `true` to serve over SSE on port 8000 instead of stdio |
 | `BB_LATITUDE`, `BB_LONGITUDE` | IP lookup | Pin the delivery coordinates |
+| `BB_MIN_CALL_INTERVAL` | `0.8` | Minimum seconds between API calls; raise it if BigBasket returns 429 |
 | `BB_ENTRY_CONTEXT`, `BB_ENTRY_CONTEXT_ID` | `bbnow`, `10` | `bbnow`/`10` is 10-minute delivery, `bb-b2c`/`100` is standard slotted delivery |
 
 The login session is stored at `~/.bigbasket_mcp/cookies/auth.json` and reused across runs.
@@ -106,6 +107,10 @@ products seen during the session and flags the subtotal as partial when a price 
 
 Login, location picking and checkout are driven through the page rather than the API,
 because those flows involve OTP entry, geolocation prompts and payment widgets.
+
+Bursts are throttled: BigBasket answers a fast run of calls with 429, so the server
+spaces calls and backs off before retrying. A long shopping list therefore takes a few
+seconds per item rather than running flat out.
 
 Two details matter for reliability. The server launches the full Chromium build rather
 than Playwright's headless shell, which BigBasket's bot protection answers with 403. And
