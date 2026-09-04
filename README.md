@@ -111,6 +111,10 @@ products seen during the session and flags the subtotal as partial when a price 
 Login, location picking and checkout are driven through the page rather than the API,
 because those flows involve OTP entry, geolocation prompts and payment widgets.
 
+`set_location` is for guests. On a logged-in account BigBasket's picker rewrites the
+selected saved address to whatever point is picked, so the tool refuses to run there
+unless `allow_address_edit` is passed, and points at `select_saved_address` instead.
+
 Service areas follow the browser's coordinates, not the chosen address id, so
 switching to a saved address also moves the geolocation pin to that address's
 own latitude and longitude. Skipping that leaves search answering 303 "SAs got

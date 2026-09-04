@@ -117,11 +117,33 @@ class LocationService(BaseService):
             f"{await self.get_delivery_info()}"
         )
 
-    async def set_location(self, query: str) -> str:
+    async def set_location(self, query: str, allow_address_edit: bool = False) -> str:
         """Set the delivery location by searching for an area, landmark or pincode.
 
         Pass 'detect' to use the browser's geolocation instead.
+
+        On a logged-in account the picker does not just move the shopping
+        location: it rewrites the currently selected saved address to the picked
+        point. That silently edits the user's address book, so this refuses to
+        run while logged in unless allow_address_edit is set. Use
+        select_saved_address to move between saved addresses instead.
         """
+        status, _ = await self.api(ADDRESS_LIST)
+        logged_in = status == 200
+        if logged_in and not allow_address_edit:
+            addresses = await self.get_saved_addresses()
+            listing = "\n".join(
+                f"  {a['id']}  {a['label']}: {a['details']}" for a in addresses
+            )
+            return (
+                "Refusing to run: on a logged-in account this picker overwrites the "
+                "selected saved address with the location picked, changing the "
+                "user's address book. Use select_saved_address with one of these "
+                f"instead:\n{listing}\n"
+                "Pass allow_address_edit=True only if the user has explicitly asked "
+                "to change that saved address."
+            )
+
         await self.goto("/", wait_ms=5000)
         await self.dismiss_overlays()
 

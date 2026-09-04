@@ -70,8 +70,8 @@ class BigBasketOrder:
     async def select_saved_address(self, address_id: str):
         return await self.location_service.select_address(address_id)
 
-    async def set_location(self, query: str):
-        return await self.location_service.set_location(query)
+    async def set_location(self, query: str, allow_address_edit: bool = False):
+        return await self.location_service.set_location(query, allow_address_edit)
 
     # Checkout and payment
     async def open_checkout(self):

@@ -163,13 +163,18 @@ async def get_location_serviceability(latitude: float, longitude: float) -> str:
 
 
 @mcp.tool()
-async def set_location(query: str) -> str:
-    """Set the delivery location by area, landmark or pincode.
+async def set_location(query: str, allow_address_edit: bool = False) -> str:
+    """Set the delivery location by area, landmark or pincode. Guests only.
 
     Pass 'detect' to use this machine's own geolocation.
+
+    On a logged-in account BigBasket's picker rewrites the selected saved
+    address to whatever is picked, so this refuses to run and points at
+    select_saved_address instead. Only pass allow_address_edit when the user has
+    asked to change that saved address itself.
     """
     await ctx.ensure_started()
-    result, logs = await _run(ctx.order.set_location, query)
+    result, logs = await _run(ctx.order.set_location, query, allow_address_edit)
     return (logs + "\n" + str(result)).strip()
 
 
